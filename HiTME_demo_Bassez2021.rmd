@@ -1,0 +1,286 @@
+---
+title: Cell type classification in tumor microenvirontment using HiTME
+date: "`r Sys.Date()`"
+author: "J. Garnica <josep.garnicacaparros at unil.ch>"
+output:
+  rmdformats::readthedown:
+    self-contained: true
+    highlight: haddock
+    thumbnails: false
+    css: styles.css
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file, encoding=encoding,
+  output_file=file.path(dirname(input_file), out_dir, 'HiTME_demo.html'))})
+---
+
+```{r setup, echo=FALSE}
+#install.packages("rmdformats")
+#Template markdown setup
+library(knitr)
+library(rmdformats)
+library(formatR)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               cache.lazy=FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               dev='png')
+opts_knit$set(width=75)
+
+```
+
+
+# Background
+
+In this vignette we will use [`HiTME`](https://github.com/carmonalab/HiTME) to classify the cell types found in whole-tumor samples from Breast cancer. 
+This single-cell data set was processed from original work from [Bassez et al. (2021) Nature Medicine](https://www.nature.com/articles/s41591-021-01323-8). The original data set contains single-cell data from hormone receptor-positive or triple-negative breast carcinoma biopsies from 42 patients. One cohort (n=31) of patients with non-metastatic, treatment-naive primary invasive carcinoma of the breast was treated with one dose of pembrolizumab (Keytruda or anti-PD1) approximately 9 ± 2 days before surgery. A second cohort of patients (n=11) received neoadjuvant chemotherapy for 20–24 weeks, which was followed by anti-PD1 treatment before surgery. In both cohorts, a tumor biopsy was harvested immediately before anti-PD1 treatment (‘pre’), while another biopsy was collected during subsequent surgery (‘on’).
+
+
+[Full Data Original Source](https://biokey.lambrechtslab.org/en/data-access)
+
+[Demo dataset link](https://figshare.com/ndownloader/files/43774938)
+
+# Goals
+
+* Use HiTME tools to predict cell types in 3 different whole tumor samples of breast cancer.
+* Evalute their fitness and compare to authors prediction
+
+# R Environment
+
+```{r Renv, message=F, warning=F, results=F}
+# install HiTME if needed
+#remotes::install_github("carmonalab/HiTME", ref="dev")
+
+# load library
+library(HiTME)
+library(Seurat)
+
+# increase timeout max when downloading dataset and references
+options(timeout = max(2000, getOption("timeout")))
+```
+
+# Processed dataset
+A Seurat object with 3 patient samples from pre-treatment ('pre') condition were subsetted from the original data set [Bassez et al. 2021](https://www.nature.com/articles/s41591-021-01323-8): "BIOKEY_11", "BIOKEY_30", and "BIOKEY_4", without downsampling or further per sample filtering. No cells were discarded based on quality control metrics and data was normalized using Seurat `NormalizeData` function. All available metadata was included.
+File can be downloaded from (https://figshare.com/ndownloader/files/43774938)
+
+# Demo data downloading
+
+```{r download_Demodataset}
+ddir <- "input"
+if (!file.exists(ddir)){
+    dir.create(ddir)
+    dataUrl <- "https://figshare.com/ndownloader/files/43774938"
+    download.file(dataUrl, destfile = file.path(ddir,"/bassez_3patients.rds"))
+}
+#Count matrices
+bassez <- readRDS("input/bassez_3patients.rds")
+```
+
+Explore the dataset and its metadata
+
+Number of cells:
+
+```{r explore_demo_cells}
+# number of genes and cells
+dim(bassez)
+# number of cells per patient
+table(bassez$sample)
+```
+
+Metadata content:
+
+```{r explore_demo_meta}
+bassez@meta.data[1:6,1:10]
+```
+
+
+# Classify cell types using HiTME
+HiTME's `Run.HiTME`classification tool is a wrapper of [scGate](https://github.com/carmonalab/scGate) and [ProjecTILs](https://github.com/carmonalab/ProjecTILs) to classify cell types in single-cell RNA-seq experiments.
+
+The function takes as input `Seurat` objects (or list of them). These should be split by sample to avoid batch effects, or split internally in `Run.HitME` by indicating the parameter `split.by`.
+
+This wrapper firstly runs [scGate](https://github.com/carmonalab/scGate) on TME (Tumor micronenvirontment) default models or alternatively on the models provided, resulting in a coarse cell type classification (CD4T, B cell, Dendritic cell...). Next, it runs [ProjecTILs](https://github.com/carmonalab/ProjecTILs) for a finer cell type classification (CD4+ TFH, Tex CD8+, cDC1...) based on the references provided on the cell types classified by [scGate](https://github.com/carmonalab/scGate) that are linked to a respective reference map.
+
+Importantly, HiTME supports analysis using only one of these tools, i.e. only [scGate](https://github.com/carmonalab/scGate) if only coarse cell type classification is intended; or only [ProjecTILs](https://github.com/carmonalab/ProjecTILs), i.e. if a sample is composed exclusively of a high purity coarse cell type subset.
+
+
+## Download reference maps
+
+For the finer cell type classification using [ProjecTILs](https://github.com/carmonalab/ProjecTILs) we need to download the corresponding reference maps or atlases. These have been previously produced by comprehensive scRNA-seq multi-study integration and curation, and describe reference cell subtypes in a specific TME context.
+The currently available reference maps for TME context are:
+
+* **CD4 T cells reference map**
+* **CD8 T cells reference map**
+* **MoMac (monocytes and macrophages subtypes) reference map**
+* **Dendritic cells (DC) reference map**
+
+```{r download_refmaps}
+# create directory for reference maps
+refs_dir <- "refs"
+if (!dir.exists(refs_dir)){ dir.create(refs_dir)}
+
+# links to ref maps
+ref_links <- c("CD8" = "https://figshare.com/ndownloader/files/41414556",
+               "CD4" = "https://figshare.com/ndownloader/files/39012395",
+               "DC" = "https://figshare.com/ndownloader/files/39120752",
+               "MoMac" = "https://figshare.com/ndownloader/files/42449055")
+
+# download reference maps
+lapply(names(ref_links), function(x){
+  download.file(ref_links[[x]],
+                destfile = file.path(refs_dir, paste0(x, ".rds")))
+})
+```
+
+Load the reference maps onto the environtment
+```{r load_refmaps}
+require(ProjecTILs)
+
+ref.maps <- lapply(names(ref_links), function(x){
+  load.reference.map(file.path(refs_dir, paste0(x, ".rds")))
+})
+
+# give name to the element of the refernece list
+names(ref.maps) <- names(ref_links)
+```
+
+By default [scGate](https://github.com/carmonalab/scGate) (layer 1) will return the [cell ontology ID](https://www.ebi.ac.uk/ols4/ontologies/cl) for each predicted cell type. This ID will be then used to predicted their finer cell type using [ProjecTILs](https://github.com/carmonalab/ProjecTILs). Hence, we need to indicate each respective cell ontology ID(s) for each reference map.
+
+```{r cellontology_link}
+# add scGate_link to ref.maps
+layer1.links <- list("CD8" = "CL:0000625",
+                  "CD4" = "CL:0000624",
+                  "DC" = "CL:0000451",
+                  # if multiple coarse cell type are included in a reference map,
+                  # they should be indicated in a vector
+                  "MoMac" = c("CL:0000576", "CL:0000235")
+                  )
+
+for(a in names(ref.maps)){
+  ref.maps[[a]]@misc$layer1_link <- layer1.links[[a]]
+}
+```
+
+Before running HiTME,let's explore the reference maps for the different cell types
+```{r refs_umaps, fig.width=10, fig.height=10}
+require(ggplot2)
+refmap_umap <- lapply(names(ref.maps),
+                      function(x){
+                        DimPlot(ref.maps[[x]],
+                                cols = ref.maps[[x]]@misc$atlas.palette,
+                                label = T,
+                                repel = T) +
+                          # theme(aspect.ratio = 1) +
+                          ggtitle(x) +
+                          NoLegend()
+                      }
+                    )
+
+patchwork::wrap_plots(refmap_umap)
+```
+
+
+# Run HiTME
+Now we are set to run `Run.HiTME` to predicte the different coarase and finer cell type found in these breast cancer samples.
+Ideally, this should be run sample-wise to avoid batch-effect effects on the prediction.
+
+```{r split_object}
+# split seurat object based on sample
+bassez_split <- SplitObject(bassez, split.by = "sample")
+
+# we have a list with an element per sample
+names(bassez_split)
+```
+
+`Run.HiTME` can take a single seurat object or a list of them. Even we can split the object internally using the parameter `split.by` if the object contain multiple samples.
+
+```{r Run.hitme}
+bassez_split <- Run.HiTME(bassez_split,
+                      ref.maps = ref.maps)
+```
+
+
+```{r getHitobject}
+hit.list <- list()
+
+for(a in names(bassez_3)){
+hit.list[[a]] <- get.HiTObject(bassez_3[[a]],
+                               useNA = T,
+                               group.by = list("layer1" = c("scGate_multi"),
+                                     "layer2" = c("functional.cluster"),
+                                     "layer1_authors" = c("cellType"),
+                                     "layer2_authors" = c("cellSubType")
+                                    ))
+}
+
+```
+
+# Compositional plots
+```{r composition_plots, fig.width=10, fig.height=10}
+plot.celltype.freq(hit.list,
+                   group.by = list("layer1" = c("scGate_multi"),
+                                     "layer2" = c("functional.cluster"),
+                                     "layer1_authors" = c("cellType"),
+                                     "layer2_authors" = c("cellSubType")
+                                    ),
+                  by.x = "sample")
+
+plot.celltype.freq(hit.list,
+                   group.by = list("layer1" = c("scGate_multi"),
+                                     "layer2" = c("functional.cluster"),
+                                     "layer1_authors" = c("cellType"),
+                                     "layer2_authors" = c("cellSubType")
+                                    ),
+                  by.x = "celltype")
+```
+
+## Compare classification of HiTME vs authors
+```{r confusion_plots, fig.width=12, fig.height=12}
+plot.confusion.matrix(hit.list,
+                      var.1 = "cellType",
+                      var.2 = "scGate_multi", relative = T)
+
+plot.confusion.matrix(hit.list,
+                      var.1 = "cellSubType",
+                      var.2 = "functional.cluster")
+```
+
+
+
+
+
+
+
+# Discussion
+
+
+
+# Further reading
+
+Dataset original publication -  [Bassez et al](https://www.nature.com/articles/s41591-021-01323-8)
+
+
+
+
+# References
+
+* Bassez, A., Vos, H., Van Dyck, L. et al. A single-cell map of intratumoral changes during anti-PD1 treatment of patients with breast cancer. Nat Med 27, 820–832 (2021). https://doi.org/10.1038/s41591-021-01323-8
+
+* Daud, A.I., Loo, K., Pauli, M.L., Sanchez-Rodriguez, R., Sandoval, P.M., Taravati, K., Tsai, K., Nosrati, A., Nardo, L., Alvarado, M.D., Algazi, A.P., Pampaloni, M.H., Lobach, I.V., Hwang, J., Pierce, R.H., Gratz, I.K., Krummel, M.F., Rosenblum, M.D., 2016. Tumor immune profiling predicts response to anti-PD-1 therapy in human melanoma. J. Clin. Invest. 126, 3447–3452. https://doi.org/10.1172/JCI87324
+
+* Gros, A., Robbins, P.F., Yao, X., Li, Y.F., Turcotte, S., Tran, E., Wunderlich, J.R., Mixon, A., Farid, S., Dudley, M.E., Hanada, K., Almeida, J.R., Darko, S., Douek, D.C., Yang, J.C., Rosenberg, S. a, 2014. PD-1 identifies the patient-specific in filtrating human tumors. J. Clin. Invest. 124, 2246–59. https://doi.org/10.1172/JCI73639.2246
+
+* Miller, B.C., Sen, D.R., Al Abosy, R., Bi, K., Virkud, Y.V., LaFleur, M.W., Yates, K.B., Lako, A., Felt, K., Naik, G.S., Manos, M., Gjini, E., Kuchroo, J.R., Ishizuka, J.J., Collier, J.L., Griffin, G.K., Maleri, S., Comstock, D.E., Weiss, S.A., Brown, F.D., Panda, A., Zimmer, M.D., Manguso, R.T., Hodi, F.S., Rodig, S.J., Sharpe, A.H., Haining, W.N., 2019. Subsets of exhausted CD8+ T cells differentially mediate tumor control and respond to checkpoint blockade. Nat. Immunol. 20, 326–336. https://doi.org/10.1038/s41590-019-0312-6
+
+* Siddiqui, I., Schaeuble, K., Chennupati, V., Fuertes Marraco, S.A., Calderon-Copete, S., Pais Ferreira, D., Carmona, S.J., Scarpellino, L., Gfeller, D., Pradervand, S., Luther, S.A., Speiser, D.E., Held, W., 2019. Intratumoral Tcf1+PD-1+CD8+ T Cells with Stem-like Properties Promote Tumor Control in Response to Vaccination and Checkpoint Blockade Immunotherapy. Immunity 50, 195–211.e10. https://doi.org/10.1016/J.IMMUNI.2018.12.021
+
+* Thommen, D.S., Koelzer, V.H., Herzig, P., Roller, A., Trefny, M., Dimeloe, S., Kiialainen, A., Hanhart, J., Schill, C., Hess, C., Prince, S.S., Wiese, M., Lardinois, D., Ho, P.C., Klein, C., Karanikas, V., Mertz, K.D., Schumacher, T.N., Zippelius, A., 2018. A transcriptionally and functionally distinct pd-1 + cd8 + t cell pool with predictive potential in non-small-cell lung cancer treated with pd-1 blockade. Nat. Med. 24, 994. https://doi.org/10.1038/s41591-018-0057-z
+
+* Kumagai, S., Togashi, Y., Kamada, T. et al. The PD-1 expression balance between effector and regulatory T cells predicts the clinical efficacy of PD-1 blockade therapies. Nat Immunol 21, 1346–1358 (2020). https://doi.org/10.1038/s41590-020-0769-3
