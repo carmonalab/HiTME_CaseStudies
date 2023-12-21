@@ -81,6 +81,7 @@ if (!file.exists(ddir)){
 }
 #Count matrices
 bassez <- readRDS("input/bassez_3patients.rds")
+
 ```
 
 Explore the dataset and its metadata
@@ -128,7 +129,7 @@ if (!dir.exists(refs_dir)){ dir.create(refs_dir)}
 
 # links to ref maps
 ref_links <- c("CD8" = "https://figshare.com/ndownloader/files/41414556",
-               "CD4" = "https://figshare.com/ndownloader/files/39012395",
+               "CD4" = "https://figshare.com/ndownloader/files/43794750",
                "DC" = "https://figshare.com/ndownloader/files/39120752",
                "MoMac" = "https://figshare.com/ndownloader/files/42449055")
 
@@ -201,17 +202,21 @@ names(bassez_split)
 
 `Run.HiTME` can take a single seurat object or a list of them. Even we can split the object internally using the parameter `split.by` if the object contain multiple samples.
 
-```{r Run.hitme}
+```{r Run.hitme, eval = F}
 bassez_split <- Run.HiTME(bassez_split,
                       ref.maps = ref.maps)
+```
+
+```{r load_hit_results, include=F}
+bassez_split <- readRDS("cache/bassez_split.rds")
 ```
 
 
 ```{r getHitobject}
 hit.list <- list()
 
-for(a in names(bassez_3)){
-hit.list[[a]] <- get.HiTObject(bassez_3[[a]],
+for(a in names(bassez_split)){
+hit.list[[a]] <- get.HiTObject(bassez_split[[a]],
                                useNA = T,
                                group.by = list("layer1" = c("scGate_multi"),
                                      "layer2" = c("functional.cluster"),
@@ -242,10 +247,10 @@ plot.celltype.freq(hit.list,
 ```
 
 ## Compare classification of HiTME vs authors
-```{r confusion_plots, fig.width=12, fig.height=12}
+```{r confusion_plots, fig.width=14, fig.height=14}
 plot.confusion.matrix(hit.list,
                       var.1 = "cellType",
-                      var.2 = "scGate_multi", relative = T)
+                      var.2 = "scGate_multi", relative = F)
 
 plot.confusion.matrix(hit.list,
                       var.1 = "cellSubType",
