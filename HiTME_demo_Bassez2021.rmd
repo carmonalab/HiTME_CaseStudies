@@ -1,0 +1,711 @@
+---
+title: Cell type classification in tumor microenvirontment using HiTME
+date: "`r Sys.Date()`"
+author: "J. Garnica <josep.garnicacaparros@unil.ch>"
+output:
+  rmdformats::readthedown:
+    self-contained: true
+    highlight: haddock
+    thumbnails: false
+    css: styles.css
+runtime: shiny
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file, encoding=encoding,
+  output_file=file.path(dirname(input_file), out_dir, 'HiTME_demo.html'))})
+---
+
+```{r setup, echo= F, message = F, warning = F}
+#install.packages("rmdformats")
+#Template markdown setup
+library(knitr)
+library(rmdformats)
+library(formatR)
+library(DT)
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               cache.lazy=FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               dev='png',
+               fig.align='center')
+opts_knit$set(width=75)
+
+```
+
+
+```{r show_dt, echo = F}
+require(DT)
+
+show_tbl <- function(df){
+  datatable(df,
+            rownames = F,
+            class="cell-border stripe",
+            options = list(pageLength = 5,
+                           searching = FALSE))
+
+}
+
+```
+
+
+
+# Background
+
+In this vignette we will use [`HiTME`](https://github.com/carmonalab/HiTME) to classify the cell types found in whole-tumor samples from Breast cancer. 
+This single-cell data set was processed from original work from [Bassez et al. (2021) Nature Medicine](https://www.nature.com/articles/s41591-021-01323-8). The original data set contains single-cell data from hormone receptor-positive or triple-negative breast carcinoma biopsies from 42 patients. One cohort (n=31) of patients with non-metastatic, treatment-naive primary invasive carcinoma of the breast was treated with one dose of pembrolizumab (Keytruda or anti-PD1) approximately 9 ± 2 days before surgery. A second cohort of patients (n=11) received neoadjuvant chemotherapy for 20–24 weeks, which was followed by anti-PD1 treatment before surgery. In both cohorts, a tumor biopsy was harvested immediately before anti-PD1 treatment (‘pre’), while another biopsy was collected during subsequent surgery (‘on’).
+
+
+[Full Data Original Source](https://biokey.lambrechtslab.org/en/data-access)
+
+[Demo dataset link](https://figshare.com/account/projects/190248/articles/24916611)
+
+# Goals
+
+* Use HiTME tools to predict cell types in 3 different whole tumor samples of breast cancer.
+* Evalute their fitness and compare to authors prediction
+
+# R Environment
+
+```{r Renv, message=F, warning=F, results=F}
+# install HiTME if needed
+
+# remotes::install_github("carmonalab/HiTME")
+
+# load libraries
+library(HiTME)
+library(Seurat)
+
+# increase timeout max when downloading dataset and references
+options(timeout = max(2000, getOption("timeout")))
+```
+
+# Processed dataset
+A Seurat object with 3 patient samples from pre-treatment ('pre') condition were subset from the original data set [Bassez et al. 2021](https://www.nature.com/articles/s41591-021-01323-8): "BIOKEY_13_Pre", "BIOKEY_14_Pre", and "BIOKEY_5_Pre", without downsampling or further per sample filtering. No cells were discarded based on quality control metrics and data was normalized using Seurat `NormalizeData` function. All available metadata was included.
+
+File can be downloaded from (https://figshare.com/ndownloader/files/43848153)
+
+# Demo data downloading
+
+```{r download_Demodataset}
+ddir <- "input"
+dest <- file.path(ddir,"bassez_3patients.rds")
+
+if (!file.exists(dest)){
+  dir.create(ddir)
+  dataUrl <- "https://figshare.com/ndownloader/files/43848153"
+  download.file(dataUrl, destfile = dest)
+}
+```
+
+Load Seurat object to R environment
+```{r import_Seurat_demo_object}
+bassez <- readRDS(dest)
+```
+
+Explore the dataset and its metadata
+
+
+```{r explore_demo_cells}
+# number of genes and cells
+dim(bassez)
+
+# number of cells per patient
+table(bassez$sample)
+```
+
+Metadata content:
+
+```{r explore_demo_meta, eval = F}
+bassez@meta.data[1:20,1:10]
+```
+
+```{r show_demo_meta, echo = F, cache = F, fig.height=5}
+show_tbl(bassez@meta.data[1:20,1:10])
+```
+
+
+<br>
+
+# Classify cell types using HiTME
+[HiTME](https://github.com/carmonalab/HiTME)'s `Run.HiTME` classification tool is a wrapper of [scGate](https://github.com/carmonalab/scGate) and [ProjecTILs](https://github.com/carmonalab/ProjecTILs) to classify cell types in single-cell RNA-seq experiments.
+
+The function takes as input `Seurat` objects (or list of them). These should be split by sample to avoid batch effects, or split internally in `Run.HitME` by indicating the parameter `split.by`.
+
+## 1st layer
+This wrapper firstly runs [scGate](https://github.com/carmonalab/scGate) on TME (Tumor micronenvirontment) default models or alternatively on the models provided, resulting in a **coarse cell type classification** (CD4T, B cell, Dendritic cell...). 
+
+## 2nd layer
+Next, [HiTME](https://github.com/carmonalab/HiTME) runs [ProjecTILs](https://github.com/carmonalab/ProjecTILs) for a **finer cell type classification** (CD4+ TFH, Tex CD8+, cDC1...) based on the references provided on the cell types classified by [scGate](https://github.com/carmonalab/scGate) that are linked to a respective reference map.
+
+<br>
+
+Importantly, [HiTME](https://github.com/carmonalab/HiTME) supports analysis using only one of these tools, i.e. only [scGate](https://github.com/carmonalab/scGate) if only coarse cell type classification is intended; or only [ProjecTILs](https://github.com/carmonalab/ProjecTILs), i.e. if a sample is composed exclusively of a high purity coarse cell type subset. This can be achieved by indicating `scGate.model = NULL` or `ref.maps = NULL`, respectively.
+
+
+## Additional cell state flavors
+Additional signatures not included in the models (e.g. cell cycling, IFN/HSP response...) can also be evaluated using `additional.signatures` parameter. These are lists of defining genes for these signatures manually customed or retrieved from [SignatuR](https://github.com/carmonalab/SignatuR).
+As a result, [UCell](https://github.com/carmonalab/UCell) scores for each additional signature will be added as metadata and also summarized when getting a HiT object (see below).
+
+<br>
+
+
+# Prepare models and reference maps
+
+## Fetch scGate models
+```{r Get_scGate_models}
+require(scGate)
+
+# Fetch all models from scGate
+all_models <- get_scGateDB()
+
+# Select models to be used, based on your data specs
+HiT_scGate_models <- all_models$human$HiTME
+```
+
+For cell type annotation on whole tumor samples we recommend using the `HiTME` models from [scGate](https://github.com/carmonalab/scGate). These contain the following models to classify their respective cell types:
+
+```{r names_scGate_models}
+names(HiT_scGate_models)
+```
+
+These models will be then used for `Run.HiTME` function (see below). If no model is indicated (`scGate.model = "default"`), these models will be used by default.
+
+
+
+## Fetch additional signatures
+
+By default, `Run.HiTME` will use the `Programs` group of signatures from [SignatuR](https://github.com/carmonalab/SignatuR). Additional custom signatures can be manually added.
+
+```{r Get_additional_signatures}
+require(SignatuR)
+
+species <- "Hs"
+
+additional.signatures <- GetSignature(SignatuR[[species]][["Programs"]])
+
+lapply(additional.signatures, head, n = 3)
+
+# to add additional signatures
+
+# additional.signatures[["Custom_signature"]] <- c("GeneA", "GeneB", "GeneC")
+```
+
+
+
+## Download reference maps
+
+For the finer cell type classification using [ProjecTILs](https://github.com/carmonalab/ProjecTILs) we need to download the corresponding reference maps or atlases. These have been previously produced by comprehensive scRNA-seq multi-study integration and curation, and describe reference cell subtypes in a specific TME context.
+The currently available reference maps for TME context are:
+
+* **CD4 T cells reference map**
+* **CD8 T cells reference map**
+* **MoMac (monocytes and macrophages subtypes) reference map**
+* **Dendritic cells (DC) reference map**
+
+```{r link_download_refmaps}
+# create directory for reference maps, if not existent
+refs_dir <- "refs"
+dir.create(refs_dir)
+
+# links to ref maps
+ref_links <- c("CD8" = "https://figshare.com/ndownloader/files/41414556",
+               "CD4" = "https://figshare.com/ndownloader/files/43794750",
+               "DC" = "https://figshare.com/ndownloader/files/39120752",
+               "MoMac" = "https://figshare.com/ndownloader/files/42449055")
+```
+
+```{r download_refmaps, eval = F, results='hide'}
+# download reference maps
+lapply(names(ref_links), function(x){
+  download.file(ref_links[[x]],
+                destfile = file.path(refs_dir, paste0(x, ".rds")))
+})
+```
+
+Load the reference maps onto the environtment
+```{r load_refmaps}
+require(ProjecTILs)
+
+ref.maps <- lapply(names(ref_links), function(x){
+  load.reference.map(file.path(refs_dir, paste0(x, ".rds")))
+})
+
+# give name to the element of the reference list
+names(ref.maps) <- names(ref_links)
+```
+<br>
+
+By default [scGate](https://github.com/carmonalab/scGate) (layer 1) will return the [cell ontology ID](https://www.ebi.ac.uk/ols4/ontologies/cl) for each predicted cell type. This ID will be then used to link each coarse cell type with its respective reference map for finer cell type classification using [ProjecTILs](https://github.com/carmonalab/ProjecTILs). Hence, we need to indicate each respective cell ontology ID(s) for each reference map.
+
+If alternative celltype link are used between the coarse and finer cell type classification, this must be specified in `Run.HiTME` using `layer1_link` parameter.
+
+```{r cellontology_link, cache = F}
+# add scGate_link to ref.maps, by default coarse cell type cell ontology ID
+layer1.links <- list("CD8" = "CL:0000625",
+                  "CD4" = "CL:0000624",
+                  "DC" = "CL:0000451",
+                  "MoMac" = "CL:0000576_CL:0000235"
+                  )
+# if multiple coarse cell type are included in a reference map, they should be indicated in a vector
+
+for(a in names(ref.maps)){
+  ref.maps[[a]]@misc$layer1_link <- layer1.links[[a]]
+}
+```
+
+
+Before running [`HiTME`](https://github.com/carmonalab/HiTME), let's explore the reference maps for the different cell types:
+
+```{r refs_umaps, fig.width=10, fig.height=10, cache = F}
+require(ggplot2)
+require(patchwork)
+
+refmap_umap <- lapply(names(ref.maps),
+                      function(x){
+                        DimPlot(ref.maps[[x]],
+                                cols = ref.maps[[x]]@misc$atlas.palette,
+                                label = T,
+                                repel = T) +
+                          ggtitle(x) +
+                          NoLegend()
+                      }
+                    )
+
+wrap_plots(refmap_umap)
+```
+
+<br>
+
+# Run HiTME
+
+```{r load_hit_results, include = F}
+bassez_split <- readRDS("cache/bassez_split.rds")
+```
+
+Now we are set to run `Run.HiTME` to predict the different coarse and finer cell type found in these breast cancer samples.
+Ideally, this should be run sample-wise to avoid batch-effect effects on the prediction.
+
+```{r split_object, eval = F}
+# split Seurat object based on sample
+bassez_split <- SplitObject(bassez, split.by = "sample")
+```
+
+We have a list with an element per sample
+
+```{r names_of_list}
+names(bassez_split)
+```
+
+`Run.HiTME` can take a single seurat object or a list of them. Even we can split the object internally using the parameter `split.by` if the object contain multiple samples. This will return a Seurat object or list of them with new metadata indicating cell type annotation.
+
+```{r Run.hitme, eval = F}
+bassez_split <- Run.HiTME(bassez_split,
+                          scGate.model = HiT_scGate_models,
+                          ref.maps = ref.maps
+                          )
+```
+
+```{r Run.hitme_tuning, eval = F}
+# Run.HiTME tuning parameters
+## do not run
+bassez_split <- Run.HiTME(bassez_split,
+                          scGate.model = HiT_scGate_models,
+                          ref.maps = ref.maps,
+                          # already split object
+                          split.by = NULL 
+                          # if splitting or providing list, whether to return a single merged object
+                          remerge = FALSE,
+                          # link between scGate and ProjecTILs
+                          layer1_link = "CellOntology_ID" 
+                          # extra signatures to be computed per celltype
+                          additional.signatures = additional.signatures, 
+                          # paralelization parameters
+                          ncores = 4,
+                          progressbar = TRUE
+                          )
+```
+
+<br>
+
+# Get HiT object
+
+Annotated Seurat objects can be summarized into HiT objects using `get.HiTObject` function. For this function the grouping variable(s) (i.e. cell type classification) `group.by` resulting from `Run.HiTME` annotation or additional annotations need to be indicated.
+
+Additional parameters include, `useNA` parameter which can indicate if undefined/unclassified cells should be considered (`NA`, by default `= FALSE`), and `clr_zero_impute_perc` indicating the % of total cell type counts is added to cell types with 0 when computing CLR (centered-log ratio) transformation (default is 1%).
+
+
+```{r getHitobject}
+# create empty list to store HiT objects
+hit.list <- list()
+
+# get HiT objects
+for(a in names(bassez_split)){
+  hit.list[[a]] <- get.HiTObject(bassez_split[[a]],
+                                 # multiple grouping variables can be indicated, either as list or vector
+                                 group.by = list("layer1" = c("scGate_multi"),
+                                       "layer2" = c("functional.cluster"),
+                                       "layer1_authors" = c("cellType"),
+                                       "layer2_authors" = c("cellSubType")
+                                      ),
+                                 ## optional parameters
+                                 # consider cells not classified (NA)
+                                 useNA = T,
+                                 # % of total to impute pseudocount for CLR on compositional data
+                                 clr_zero_impute_perc = 1
+                                 )
+}
+
+```
+
+Alternatively, HiT summarizing object can be obtained directly using `Run.HiTME` with the parameter `return.Seurat = FALSE`.
+
+```{r, eval = F}
+hit.list <- Run.HiTME(bassez_split,
+                      ref.maps = ref.maps,
+                      remerge = FALSE,
+                      return.Seurat = FALSE)
+```
+
+## HiT object slots {.tabset .tabset-pills}
+
+HiT objects are composed of 4 different slots:
+
+```{r explore_hit_object}
+# get one HiT object of the list, in this case corresponds to one sample
+hit <- hit.list[[1]]
+
+slotNames(hit)
+```
+
+<br>
+
+### Metadata
+<br>
+Seurat object metadata (dataframe): `metadata`. Including the new metadata added by `Run.HiTME` and preexisting metadata for each cell.
+
+```{r hit_metadata, eval = F}
+# see last 10 columns of metadata dataframe
+hit@metadata[1:30,(ncol(hit@metadata) - 9):ncol(hit@metadata)]
+```
+
+```{r show_hit_metadata, echo = F}
+show_tbl(hit@metadata[1:30,(ncol(hit@metadata) - 9):ncol(hit@metadata)])
+```
+
+
+### Predictions {#predictions}
+<br>
+Cell type predictions for each cell in the data set: `predictions`. This slot is a list where each element is the cell type classification prediction.
+
+```{r hit_predictions}
+names(hit@predictions)
+```
+
+```{r inspect_layer1}
+# let's inspect the content of layer1, in this case scGate classification
+lapply(hit@predictions$layer1,
+       function(x){
+         rownames(x) <- NULL
+         head(x, 4)
+         })
+
+# and also for coarse classification by authors (cellType)
+lapply(hit@predictions$layer1_authors, 
+       function(x){
+         rownames(x) <- NULL
+         head(x, 4)
+         })
+```
+
+#### Confusion matrix {#confusion-matrix}
+
+We can visualize the agreement between [HiTME](https://github.com/carmonalab/HiTME) celltype prediction and authors manual annotation in [Bassez et al. (2021)](https://www.nature.com/articles/s41591-021-01323-8) using a confusion matrix with `HiTME` function `plot.confusion.matrix`.
+
+```{r tile_confusion_matrix, fig.width=6.5}
+# use all 3 samples (whole list of HiT objects)
+plot.confusion.matrix(hit.list,
+                      var.1 = "cellType",
+                      var.2 = "scGate_multi",
+                      # use relative proportion of cells
+                      relative = TRUE,
+                      # produce confusion matrix plot
+                      type = "tile")
+```
+
+We cal also indicate `type = "barplot"` to visualize the agreement using a bar plot:
+
+```{r barplot_confusion_matrix, fig.width=6.5}
+#use relative proportion of cells
+plot.confusion.matrix(hit.list,
+                      var.1 = "cellType",
+                      var.2 = "scGate_multi",
+                      relative = TRUE, 
+                      type = "barplot")
+```
+
+
+### Composition {#composition}
+<br>
+Cell type composition for each layer of cell type prediction: `composition`. A list including:
+
+* Cell counts (`cell_counts`)
+    
+* Cell relative proportions (`freq`)
+    
+* Centered log ratio (CLR)-transformed cell counts (`freq_clr`)
+
+```{r composition_slot_content}
+# let's inspect the compositional data for HiTME layer 1 (scGate)
+hit@composition$layer1
+```
+
+#### Celltype frequency plots {#freq-plots}
+
+We can visualize the composition data of all 3 samples using the [HiTME](https://github.com/carmonalab/HiTME) function `plot.celltype.freq`.
+The parameter `by.x` defines which variables, sample or celltype, are included in the x-axis the plot types, rendering a barplot or boxplot, respectively.
+
+```{r composition_plots, results='hide', fig.width=6, fig.height=6}
+# use all 3 samples (whole list of HiT objects)
+
+# by sample, barplot
+plot.celltype.freq(hit.list,
+                  group.by = "scGate_multi",
+                  by.x = "sample")
+
+# by sample, boxplot
+plot.celltype.freq(hit.list,
+                  group.by = "scGate_multi",
+                  by.x = "celltype")
+```
+
+
+
+### Aggregated profile
+<br>
+The aggregated profile slot of the HiT object is composed of a list of 2 elements:
+
+* **Pseudobulk matrix**: Aggregated counts per cell type corresponding of each classification.
+* **Averaged signature scores**: Average of signature score for indicated additional signatures for each cell type classified.
+
+```{r aggregated_profile_content}
+# content of aggregated_profile slot of HiT object
+names(hit@aggregated_profile)
+
+# first entries of each pseudobulk matrix gene expression for each classification (group.by)
+lapply(hit@aggregated_profile$Pseudobulk,
+       function(x){x[1:3,1:3]})
+
+# first entries of each average additional signature UCell score for each classification (group.by)
+lapply(hit@aggregated_profile$Signatures,
+       function(x){x[1:3,1:4]})
+```
+
+<br>
+
+# Overall cell type classification evaluation
+
+We can observe a high degree of agreement between [HiTME](https://github.com/carmonalab/HiTME) coarse cell type prediction and manual annotation by authors ([Bassez et al., 2021](https://www.nature.com/articles/s41591-021-01323-8)) on these 3 samples:
+
+* **B cells**: 70% of agreement (considering that authors do not classify plasma cells).
+* **Endothelial cells**: 90% of agreement.
+* **Fibroblasts**: 90% of agreement.
+* **Mast cells**: 100% of agreement.
+* **Myeloid cells (MoMac)**: 40% of agreement. Here `HiTME` shows apparently discrepancies with authors classification, and classify 30% of author's Myeloid cells as panDC. However, most DC subtypes are indeed myeloid, and authors only provide classification for plasmacytoid DC.
+* **Dendritic cells**: 90% of agreement.
+* **T cells**: 80% of agreement, considering that authors do not split between CD4+ and CD8+ T cells.
+
+Finally, [HiTME](https://github.com/carmonalab/HiTME) still do not support cancer cell classification. Most of the cancer cells regarded by authors (confirmed by copy number-unstability) are undefined by `HiTME` as expected (50%). However, 40% of them are classified as epithelial cells, as these cancerous cells come from a breast cancer.
+
+<br>
+
+```{r tile_confusion_matrix_2, echo = F, fig.width=6.5}
+# use all 3 samples (whole list of HiT objects)
+plot.confusion.matrix(hit.list,
+                      var.1 = "cellType",
+                      var.2 = "scGate_multi",
+                      # use relative proportion of cells
+                      relative = TRUE,
+                      # produce confusion matrix plot
+                      type = "tile")
+```
+
+Regarding the **cell type composition** of these tumor samples, we can see that all 3 samples are mostly composed of T cells, with larger proportion of CD4+ T cells vs CD8+ counterparts. The second most common cell type are fibroblasts, albeit with high variability, followed by B cells. The number of Monocytes, macrophages and dendritic cells is low in these samples.
+
+
+```{r composition_plots_2, echo = F, results='hide', fig.width=6}
+# by sample, boxplot
+plot.celltype.freq(hit.list,
+                  group.by = "scGate_multi",
+                  by.x = "celltype")
+```
+
+## Visualization of cell type classification
+
+We can also integrate the 3 samples using [STACAS](https://github.com/carmonalab/STACAS) to minimize possible batch effects and evaluate cell type clustering on a low-dimensionality space.
+
+```{r process_UMAP}
+# integrate with STACAS
+require(STACAS)
+
+# set PCA dimensions to use
+dims <- 30
+
+bassez_integrated <- bassez_split %>% 
+                      Run.STACAS(dims = dims) %>% 
+                      # Run UMAP on integrated PCA space
+                      RunUMAP(dims = 1:dims)
+```
+
+Show UMAP comparing `HiTME` and author's coarse classification :
+
+```{r show_integrated_UMAP, fig.width=11, fig.height=7, cache = F}
+require(ggplot2)
+
+# show HiTME and authors coarse cell type classification
+grouping <- c("scGate_multi", "cellType")
+umap.list <- lapply(grouping,
+                    function(g){
+                      DimPlot(bassez_integrated,
+                        group.by = g,
+                        label = T,
+                        repel = T) +
+                        guides(color = guide_legend(ncol = 3,
+                                                    override.aes = list(size = 3))) +
+                        theme(legend.position = "bottom")
+                    })
+
+wrap_plots(umap.list)
+```
+
+With this visualization we can observe firstly that authors classified few B cells that are in fact clustering with other cell types (Fibroblasts, endothelial cells, and myeloid cells). Moreover, the cell type with highest discrepancy between [HiTME](https://github.com/carmonalab/HiTME) and authors, MoMac vs myeloid cells, seem to be actually forming two different subclusters. Actually, authors only classify a distinct cluster of plasmacytoid dendritic cells (pDC), but do not show classification for myeloid dentritic cells.
+
+We can explore this further but checking the markers on these myeloid cells.
+
+```{r subset_myeloid, fig.width=3, fig.height=9, cache = F}
+DefaultAssay(bassez_integrated) <- "RNA"
+
+# keep only MoMac and panDC classification to compare them
+bassez_momac <- bassez_integrated[, bassez_integrated$cellType == "Myeloid_cell" &
+                                    bassez_integrated$scGate_multi %in% c("MoMac", "panDC") ]
+
+momacDC_markers <- c("S100A9","S100A8","FCN1","VCAN","C1QA","C1QB",
+                   "APOE","APOC1", "C1QC","CD68","FCER1G",
+                   "CLEC9A","XCR1","IRF8",
+                   "CLEC10A","FCER1A","CD1C"
+                   )
+
+# keep only genes expressed
+sc_names = rownames(bassez_momac)[rowSums(bassez_momac) > 0]
+
+momacDC_markers <- intersect(momacDC_markers, sc_names)
+
+VlnPlot(bassez_momac,
+        features = momacDC_markers,
+        group.by = "scGate_multi",
+        stack = TRUE,
+        flip = TRUE,
+        ncol = 2
+        ) +
+        NoLegend() +
+      ggtitle("Author's Myeloid cells") +
+      xlab("HiTME classification")
+
+```
+
+With this plot we can see that "Myeloid cells" according to authors, not only seem to form two independent clusters on the UMAP but also have an striking different expression of MoMac and dendritic cells markers in each cell type.
+
+
+### Visualization of finer classification
+As we have seen, [HiTME](https://github.com/carmonalab/HiTME) and authors classification show high agreement on T cell classification (~80%). However, authors do not tell apart CD4+ and CD8+ T cells, and do not take into account NK cells.
+
+Let's inspect how [HiTME](https://github.com/carmonalab/HiTME) and author's classify T cells at finer level
+
+```{r filter_Tcell}
+require(dplyr)
+
+# filter Hit metadata for only T cells and remove finer classification NA
+hit_Tcell <- lapply(hit.list,
+                    function(x){
+                      x@metadata <- x@metadata %>%
+                                    filter(scGate_multi %in% c("CD4T", "CD8T") &
+                                            !is.na(functional.cluster) &
+                                             !is.na(cellSubType))
+                      return(x)
+                      })
+```
+
+Confusion matrix
+
+```{r confusion_matrix_Tcells, fig.width=9, fig.height=8}
+
+plot.confusion.matrix(hit_Tcell,
+                      var.1 = "cellSubType",
+                      var.2 = "functional.cluster",
+                      # use relative proportion of cells
+                      relative = TRUE,
+                      # produce confusion matrix plot
+                      type = "tile")
+```
+
+Integrated UMAP
+
+```{r UMAP_tcell_finer, fig.width=11, fig.height=11}
+tcell_integrated <- bassez_split %>% 
+                    # filter for author T cells
+                    lapply(., function(x){x[,x$cellType == "T_cell"]}) %>% 
+                      Run.STACAS(dims = dims) %>% 
+                    # Run UMAP on integrated PCA space
+                      RunUMAP(dims = 1:dims)
+
+# show both finer cell type classification and also coarse of HiTME
+grouping <- c("scGate_multi", "functional.cluster", "cellSubType")
+umap.list <- lapply(grouping,
+                    function(g){
+                      DimPlot(tcell_integrated,
+                        group.by = g,
+                        label = T,
+                        repel = T) +
+                        guides(color = guide_legend(ncol = 3,
+                                                    override.aes = list(size = 3))) +
+                        theme(legend.position = "bottom")
+                    })
+
+wrap_plots(umap.list, ncol = 2, nrow = 2)
+```
+
+Overall, for finer cell types is harder to evaluate the classification performance, given the lack of consensus on the subtype names and definition. However, `HiTME` and author seem to largely agree on most subtypes.
+
+
+
+# Further reading
+
+Dataset original publication -  [Bassez et al](https://www.nature.com/articles/s41591-021-01323-8)
+
+
+
+
+# References
+
+* Bassez, A., Vos, H., Van Dyck, L. et al. A single-cell map of intratumoral changes during anti-PD1 treatment of patients with breast cancer. Nat Med 27, 820–832 (2021). https://doi.org/10.1038/s41591-021-01323-8
+
+* Daud, A.I., Loo, K., Pauli, M.L., Sanchez-Rodriguez, R., Sandoval, P.M., Taravati, K., Tsai, K., Nosrati, A., Nardo, L., Alvarado, M.D., Algazi, A.P., Pampaloni, M.H., Lobach, I.V., Hwang, J., Pierce, R.H., Gratz, I.K., Krummel, M.F., Rosenblum, M.D., 2016. Tumor immune profiling predicts response to anti-PD-1 therapy in human melanoma. J. Clin. Invest. 126, 3447–3452. https://doi.org/10.1172/JCI87324
+
+* Gros, A., Robbins, P.F., Yao, X., Li, Y.F., Turcotte, S., Tran, E., Wunderlich, J.R., Mixon, A., Farid, S., Dudley, M.E., Hanada, K., Almeida, J.R., Darko, S., Douek, D.C., Yang, J.C., Rosenberg, S. a, 2014. PD-1 identifies the patient-specific in filtrating human tumors. J. Clin. Invest. 124, 2246–59. https://doi.org/10.1172/JCI73639.2246
+
+* Miller, B.C., Sen, D.R., Al Abosy, R., Bi, K., Virkud, Y.V., LaFleur, M.W., Yates, K.B., Lako, A., Felt, K., Naik, G.S., Manos, M., Gjini, E., Kuchroo, J.R., Ishizuka, J.J., Collier, J.L., Griffin, G.K., Maleri, S., Comstock, D.E., Weiss, S.A., Brown, F.D., Panda, A., Zimmer, M.D., Manguso, R.T., Hodi, F.S., Rodig, S.J., Sharpe, A.H., Haining, W.N., 2019. Subsets of exhausted CD8+ T cells differentially mediate tumor control and respond to checkpoint blockade. Nat. Immunol. 20, 326–336. https://doi.org/10.1038/s41590-019-0312-6
+
+* Siddiqui, I., Schaeuble, K., Chennupati, V., Fuertes Marraco, S.A., Calderon-Copete, S., Pais Ferreira, D., Carmona, S.J., Scarpellino, L., Gfeller, D., Pradervand, S., Luther, S.A., Speiser, D.E., Held, W., 2019. Intratumoral Tcf1+PD-1+CD8+ T Cells with Stem-like Properties Promote Tumor Control in Response to Vaccination and Checkpoint Blockade Immunotherapy. Immunity 50, 195–211.e10. https://doi.org/10.1016/J.IMMUNI.2018.12.021
+
+* Thommen, D.S., Koelzer, V.H., Herzig, P., Roller, A., Trefny, M., Dimeloe, S., Kiialainen, A., Hanhart, J., Schill, C., Hess, C., Prince, S.S., Wiese, M., Lardinois, D., Ho, P.C., Klein, C., Karanikas, V., Mertz, K.D., Schumacher, T.N., Zippelius, A., 2018. A transcriptionally and functionally distinct pd-1 + cd8 + t cell pool with predictive potential in non-small-cell lung cancer treated with pd-1 blockade. Nat. Med. 24, 994. https://doi.org/10.1038/s41591-018-0057-z
+
+* Kumagai, S., Togashi, Y., Kamada, T. et al. The PD-1 expression balance between effector and regulatory T cells predicts the clinical efficacy of PD-1 blockade therapies. Nat Immunol 21, 1346–1358 (2020). https://doi.org/10.1038/s41590-020-0769-3
