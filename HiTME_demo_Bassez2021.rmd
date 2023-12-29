@@ -322,11 +322,11 @@ bassez_split <- Run.HiTME(bassez_split,
                           scGate.model = HiT_scGate_models,
                           ref.maps = ref.maps,
                           # already split object
-                          split.by = NULL 
+                          split.by = NULL,
                           # if splitting or providing list, whether to return a single merged object
                           remerge = FALSE,
                           # link between scGate and ProjecTILs
-                          layer1_link = "CellOntology_ID" 
+                          layer1_link = "CellOntology_ID", 
                           # extra signatures to be computed per celltype
                           additional.signatures = additional.signatures, 
                           # paralelization parameters
