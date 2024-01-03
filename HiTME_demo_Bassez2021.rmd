@@ -8,6 +8,9 @@ output:
     highlight: haddock
     thumbnails: false
     css: styles.css
+bibliography: Hitme_demo.bib
+nocite: '@*'
+citation_package: natbib
 runtime: shiny
 knit: (function(input_file, encoding) {
   out_dir <- 'docs';
@@ -67,7 +70,7 @@ This single-cell data set was processed from original work from [Bassez et al. (
 
 [Full Data Original Source](https://biokey.lambrechtslab.org/en/data-access)
 
-[Demo dataset link](https://figshare.com/account/projects/190248/articles/24916611)
+[Demo dataset link](https://figshare.com/articles/dataset/BassezA_2021_3patients/24916611)
 
 # Goals
 
@@ -153,7 +156,7 @@ Importantly, [HiTME](https://github.com/carmonalab/HiTME) supports analysis usin
 
 
 ## Additional cell state flavors
-Additional signatures not included in the models (e.g. cell cycling, IFN/HSP response...) can also be evaluated using `additional.signatures` parameter. These are lists of defining genes for these signatures manually customed or retrieved from [SignatuR](https://github.com/carmonalab/SignatuR).
+Additional signatures not included in the models (e.g. cell cycling, IFN/HSP response...) can also be evaluated using `additional.signatures` parameter. These are lists of defining genes for these signatures manually costumed or retrieved from [SignatuR](https://github.com/carmonalab/SignatuR).
 As a result, [UCell](https://github.com/carmonalab/UCell) scores for each additional signature will be added as metadata and also summarized when getting a HiT object (see below).
 
 <br>
@@ -458,21 +461,21 @@ plot.confusion.matrix(hit.list,
 <br>
 Cell type composition for each layer of cell type prediction: `composition`. A list including:
 
-* Cell counts (`cell_counts`)
+* Cell type counts (`cell_counts`)
     
-* Cell relative proportions (`freq`)
+* Cell type relative proportions (`freq`)
     
-* Centered log ratio (CLR)-transformed cell counts (`freq_clr`)
+* Centered log ratio (CLR)-transformed cell type counts (`freq_clr`)
 
 ```{r composition_slot_content}
 # let's inspect the compositional data for HiTME layer 1 (scGate)
 hit@composition$layer1
 ```
 
-#### Celltype frequency plots {#freq-plots}
+#### Cell type frequency plots {#freq-plots}
 
 We can visualize the composition data of all 3 samples using the [HiTME](https://github.com/carmonalab/HiTME) function `plot.celltype.freq`.
-The parameter `by.x` defines which variables, sample or celltype, are included in the x-axis the plot types, rendering a barplot or boxplot, respectively.
+The parameter `by.x` defines which variables, sample or cell type, are included in the x-axis the plot types, rendering a barplot or boxplot, respectively.
 
 ```{r composition_plots, results='hide', fig.width=6, fig.height=6}
 # use all 3 samples (whole list of HiT objects)
@@ -589,7 +592,7 @@ wrap_plots(umap.list)
 
 With this visualization we can observe firstly that authors classified few B cells that are in fact clustering with other cell types (Fibroblasts, endothelial cells, and myeloid cells). Moreover, the cell type with highest discrepancy between [HiTME](https://github.com/carmonalab/HiTME) and authors, MoMac vs myeloid cells, seem to be actually forming two different subclusters. Actually, authors only classify a distinct cluster of plasmacytoid dendritic cells (pDC), but do not show classification for myeloid dentritic cells.
 
-We can explore this further but checking the markers on these myeloid cells.
+We can explore this further by checking the markers on these myeloid cells.
 
 ```{r subset_myeloid, fig.width=3, fig.height=9, cache = F}
 DefaultAssay(bassez_integrated) <- "RNA"
@@ -624,9 +627,11 @@ VlnPlot(bassez_momac,
 
 With this plot we can see that "Myeloid cells" according to authors, not only seem to form two independent clusters on the UMAP but also have an striking different expression of MoMac and dendritic cells markers in each cell type.
 
+<br>
 
 ### Visualization of finer classification
-As we have seen, [HiTME](https://github.com/carmonalab/HiTME) and authors classification show high agreement on T cell classification (~80%). However, authors do not tell apart CD4+ and CD8+ T cells, and do not take into account NK cells.
+As we have seen, [HiTME](https://github.com/carmonalab/HiTME) and authors classification show high agreement on overall T cell classification (~80%). However, authors do not tell apart CD4+ and CD8+ T cells, and do not take into account NK cells.
+
 
 Let's inspect how [HiTME](https://github.com/carmonalab/HiTME) and author's classify T cells at finer level
 
@@ -683,29 +688,19 @@ umap.list <- lapply(grouping,
 wrap_plots(umap.list, ncol = 2, nrow = 2)
 ```
 
+
 Overall, for finer cell types is harder to evaluate the classification performance, given the lack of consensus on the subtype names and definition. However, `HiTME` and author seem to largely agree on most subtypes.
 
 
 
 # Further reading
 
-Dataset original publication -  [Bassez et al](https://www.nature.com/articles/s41591-021-01323-8)
+Dataset original publication -  [Bassez et al., 2021](https://www.nature.com/articles/s41591-021-01323-8)
 
-
+[Cancer Systems Immunology tools](https://github.com/carmonalab)
 
 
 # References
 
-* Bassez, A., Vos, H., Van Dyck, L. et al. A single-cell map of intratumoral changes during anti-PD1 treatment of patients with breast cancer. Nat Med 27, 820–832 (2021). https://doi.org/10.1038/s41591-021-01323-8
 
-* Daud, A.I., Loo, K., Pauli, M.L., Sanchez-Rodriguez, R., Sandoval, P.M., Taravati, K., Tsai, K., Nosrati, A., Nardo, L., Alvarado, M.D., Algazi, A.P., Pampaloni, M.H., Lobach, I.V., Hwang, J., Pierce, R.H., Gratz, I.K., Krummel, M.F., Rosenblum, M.D., 2016. Tumor immune profiling predicts response to anti-PD-1 therapy in human melanoma. J. Clin. Invest. 126, 3447–3452. https://doi.org/10.1172/JCI87324
 
-* Gros, A., Robbins, P.F., Yao, X., Li, Y.F., Turcotte, S., Tran, E., Wunderlich, J.R., Mixon, A., Farid, S., Dudley, M.E., Hanada, K., Almeida, J.R., Darko, S., Douek, D.C., Yang, J.C., Rosenberg, S. a, 2014. PD-1 identifies the patient-specific in filtrating human tumors. J. Clin. Invest. 124, 2246–59. https://doi.org/10.1172/JCI73639.2246
-
-* Miller, B.C., Sen, D.R., Al Abosy, R., Bi, K., Virkud, Y.V., LaFleur, M.W., Yates, K.B., Lako, A., Felt, K., Naik, G.S., Manos, M., Gjini, E., Kuchroo, J.R., Ishizuka, J.J., Collier, J.L., Griffin, G.K., Maleri, S., Comstock, D.E., Weiss, S.A., Brown, F.D., Panda, A., Zimmer, M.D., Manguso, R.T., Hodi, F.S., Rodig, S.J., Sharpe, A.H., Haining, W.N., 2019. Subsets of exhausted CD8+ T cells differentially mediate tumor control and respond to checkpoint blockade. Nat. Immunol. 20, 326–336. https://doi.org/10.1038/s41590-019-0312-6
-
-* Siddiqui, I., Schaeuble, K., Chennupati, V., Fuertes Marraco, S.A., Calderon-Copete, S., Pais Ferreira, D., Carmona, S.J., Scarpellino, L., Gfeller, D., Pradervand, S., Luther, S.A., Speiser, D.E., Held, W., 2019. Intratumoral Tcf1+PD-1+CD8+ T Cells with Stem-like Properties Promote Tumor Control in Response to Vaccination and Checkpoint Blockade Immunotherapy. Immunity 50, 195–211.e10. https://doi.org/10.1016/J.IMMUNI.2018.12.021
-
-* Thommen, D.S., Koelzer, V.H., Herzig, P., Roller, A., Trefny, M., Dimeloe, S., Kiialainen, A., Hanhart, J., Schill, C., Hess, C., Prince, S.S., Wiese, M., Lardinois, D., Ho, P.C., Klein, C., Karanikas, V., Mertz, K.D., Schumacher, T.N., Zippelius, A., 2018. A transcriptionally and functionally distinct pd-1 + cd8 + t cell pool with predictive potential in non-small-cell lung cancer treated with pd-1 blockade. Nat. Med. 24, 994. https://doi.org/10.1038/s41591-018-0057-z
-
-* Kumagai, S., Togashi, Y., Kamada, T. et al. The PD-1 expression balance between effector and regulatory T cells predicts the clinical efficacy of PD-1 blockade therapies. Nat Immunol 21, 1346–1358 (2020). https://doi.org/10.1038/s41590-020-0769-3
