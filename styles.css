@@ -36,3 +36,21 @@ h1,h2,h3,h4,h5,h6,legend{
     font-weight:700;
     color: #b03648;
 }
+
+div#refs {
+  font-size: 28px; /* Adjust the font size as needed */
+  margin-top: 1em; /* Adjust the top margin as needed */
+}
+
+/* Style for each reference item */
+div#refs ul {
+  list-style-type: disc;
+  margin-bottom: 0.5em; /* Adjust the bottom margin as needed */
+  padding-left: 1em; /* Add left padding for bullet points */
+}
+
+/* Style for each reference item */
+div#refs li {
+  margin-bottom: 0.5em; /* Adjust the bottom margin as needed */
+}
+
