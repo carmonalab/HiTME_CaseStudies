@@ -1,5 +1,5 @@
 ---
-title: Cell type classification in tumor microenvirontment using HiTME
+title: Cell type classification in tumor microenvironment using HiTME
 date: "`r Sys.Date()`"
 author: "J. Garnica <josep.garnicacaparros@unil.ch>"
 output:
@@ -44,6 +44,8 @@ opts_chunk$set(echo=TRUE,
 opts_knit$set(width=75)
 
 ```
+
+
 
 
 ```{r show_dt, echo = F}
@@ -145,7 +147,7 @@ show_tbl(bassez@meta.data[1:20,1:10])
 The function takes as input `Seurat` objects (or list of them). These should be split by sample to avoid batch effects, or split internally in `Run.HitME` by indicating the parameter `split.by`.
 
 ## 1st layer
-This wrapper firstly runs [scGate](https://github.com/carmonalab/scGate) on TME (Tumor micronenvirontment) default models or alternatively on the models provided, resulting in a **coarse cell type classification** (CD4T, B cell, Dendritic cell...). 
+This wrapper firstly runs [scGate](https://github.com/carmonalab/scGate) on TME (Tumor micronenvironment) default models or alternatively on the models provided, resulting in a **coarse cell type classification** (CD4T, B cell, Dendritic cell...). 
 
 ## 2nd layer
 Next, [HiTME](https://github.com/carmonalab/HiTME) runs [ProjecTILs](https://github.com/carmonalab/ProjecTILs) for a **finer cell type classification** (CD4+ TFH, Tex CD8+, cDC1...) based on the references provided on the cell types classified by [scGate](https://github.com/carmonalab/scGate) that are linked to a respective reference map.
@@ -235,7 +237,7 @@ lapply(names(ref_links), function(x){
 })
 ```
 
-Load the reference maps onto the environtment
+Load the reference maps onto the environment
 ```{r load_refmaps}
 require(ProjecTILs)
 
@@ -309,7 +311,7 @@ We have a list with an element per sample
 names(bassez_split)
 ```
 
-`Run.HiTME` can take a single seurat object or a list of them. Even we can split the object internally using the parameter `split.by` if the object contain multiple samples. This will return a Seurat object or list of them with new metadata indicating cell type annotation.
+`Run.HiTME` can take a single seurat object or a list of them. Even we can split the object internally using the parameter `split.by` if the object contains multiple samples. This will return a Seurat object or list of them with new metadata indicating cell type annotation.
 
 ```{r Run.hitme, eval = F}
 bassez_split <- Run.HiTME(bassez_split,
@@ -689,7 +691,7 @@ wrap_plots(umap.list, ncol = 2, nrow = 2)
 ```
 
 
-Overall, for finer cell types is harder to evaluate the classification performance, given the lack of consensus on the subtype names and definition. However, `HiTME` and author seem to largely agree on most subtypes.
+Overall, for finer cell types is harder to evaluate the classification performance, given the lack of consensus on the subtype names and definition. However, `HiTME` and authors seem to largely agree on most subtypes.
 
 
 
