@@ -1,0 +1,225 @@
+---
+title: Cell type classification in tumor microenvironment using HiTME
+date: "`r Sys.Date()`"
+author: "J. Garnica <josep.garnicacaparros@unil.ch>"
+output:
+  rmdformats::readthedown:
+    self-contained: true
+    highlight: haddock
+    thumbnails: false
+    css: styles.css
+runtime: shiny
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file, encoding=encoding,
+  output_file=file.path(dirname(input_file), out_dir, 'HiTME_GetStarted.html'))})
+---
+
+```{r setup, echo= F, message = F, warning = F}
+#install.packages("rmdformats")
+#Template markdown setup
+library(knitr)
+library(rmdformats)
+library(formatR)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               cache.lazy=FALSE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE,
+               dev='png',
+               fig.align='center')
+opts_knit$set(width=75)
+
+```
+
+```{r show_dt, echo = F}
+require(DT)
+
+show_tbl <- function(df){
+  datatable(df,
+            rownames = F,
+            class="cell-border stripe",
+            options = list(pageLength = 10,
+                           searching = FALSE))
+
+}
+```
+
+
+Source code: [`HiTME_CaseStudies/HiTME_GetStarted`](https://github.com/carmonalab/HiTME_CaseStudies/master/HiTME_GetStarted.rmd)
+
+# Background
+
+In this vignette we will use [`HiTME`](https://github.com/carmonalab/HiTME) to classify the cell types found in whole-tumor samples from Breast cancer. 
+This single-cell data set was processed from the original work from [Bassez et al. (2021) Nature Medicine](https://www.nature.com/articles/s41591-021-01323-8).
+
+[Full Data Original Source](https://biokey.lambrechtslab.org/en/data-access)
+
+[Demo dataset link](https://figshare.com/articles/dataset/BassezA_2021_3patients/24916611)
+
+# Installation
+
+Install HiTME package and its dependencies, if not already
+
+```{r install_dependencies, warning = F, eval = F}
+# install remotes package to install packages from github
+if(!require(remotes)){
+  install.packages("remotes")
+}
+
+if(!require("HiTME")){
+  # install from github
+  remotes::install_github("carmonalab/HiTME")
+}
+```
+
+
+# Data loading
+
+File can be downloaded from (https://figshare.com/ndownloader/files/43848153). This includes 3 samples in a list.
+
+```{r set_download_params}
+# set downloading directory
+ddir <- "input"
+dest <- file.path(ddir,"bassez_3patients.rds")
+```
+
+```{r download_demodataset, eval = F}
+# increase download timeout max if slow connection
+options(timeout = max(2000, getOption("timeout")))
+
+# donwload data
+if (!file.exists(dest)){
+  dir.create(ddir)
+  dataUrl <- "https://figshare.com/ndownloader/files/43848153"
+  download.file(dataUrl, destfile = dest)
+}
+```
+
+Load data
+
+```{r load_demodata, cache = F}
+# load downloaded .rds file
+bassez <- readRDS(dest)
+
+# keep only one sample
+bassez <- subset(bassez, sample == "BIOKEY_13_Pre")
+```
+
+# Load reference maps
+HiTME layer 2 for finer cell type classification requires expert-curated single-cell reference maps.
+Download reference maps for human
+
+```{r get_reference_maps, message = F, warning = F, cache = F, results = 'hide'}
+library(ProjecTILs)
+# Retrieve human reference maps
+ref.maps <- get.reference.maps(collection = "human",
+                               as.list = F)
+```
+
+We can quickly explore the reference maps by visualizating their UMAPs with the cell subtypes they contain
+
+```{r refs_umaps, fig.width=10, fig.height=10, cache = F}
+library(ggplot2)
+library(Seurat)
+
+# Plot UMAP for each human reference map
+refmap_umap <- lapply(names(ref.maps), function(x) {
+  DimPlot(ref.maps[[x]],
+          cols = ref.maps[[x]]@misc$atlas.palette,
+          label = T,
+          repel = T) +
+    ggtitle(x) +
+    NoLegend()
+})
+
+# Show all UMAPs
+patchwork::wrap_plots(refmap_umap)
+```
+
+# Cell type classification
+Classify cell types using HiTME
+
+```{r Run_HiTME, message = F, warning = F, results = 'hide'}
+library(HiTME)
+
+bassez <- Run.HiTME(bassez,
+                    ref.maps = ref.maps)
+```
+
+
+After cell type classification, the object metadata has been updated with different layers of cell type classification of granularity. We can explore the new metadata content.
+
+```{r explore_demo_meta, results = 'hide'}
+# select the 3 layers or levels of granuality provided by HiTME
+layers <- grep("layer[123]$", names(bassez@meta.data), value = T)
+
+bassez@meta.data[1:20,layers]
+```
+
+```{r show_demo_meta, echo = F, cache = F, fig.height=5}
+df <- bassez@meta.data[!is.na(bassez@meta.data$layer1),layers]
+show_tbl(head(df, 100))
+```
+
+We can also visualize the cell type annotation in a UMAP representation. Let's do it for `layer`, showing the broad cell type classification.
+
+```{r, echo = F, warning = F, message = F}
+# Process dataset and reduce dimensionality
+bassez <- FindVariableFeatures(bassez)
+bassez <- ScaleData(bassez)
+bassez <- RunPCA(bassez, npcs = 30)
+bassez <- RunUMAP(bassez, dims = 1:30)
+```
+
+```{r layers_umaps, fig.width=8, fig.height=7, cache = F}
+# plot UMAP for layer1
+DimPlot(bassez,
+        group.by = "layer1",
+        label = T,
+        repel = T) +
+  ggtitle("HiTME Layer1 annotation")
+```
+
+Finally, we can also explore the cell type classification at the different levels using barplots showing the number of each cell subtype.
+
+```{r barplots, fig.width=6, fig.height=8, results= 'hide'}
+# Show barplot for each level of granularity
+barplots_layers <- lapply(layers, function(l){
+  ggplot(bassez@meta.data,
+         aes(y = .data[[l]],
+             fill = .data[[l]])) +
+    geom_bar(show.legend = F) + 
+    ggtitle(l) +
+    theme_light()
+})
+
+barplots_layers
+```
+
+```{r print_barplots, echo = F}
+invisible(barplots_layers)
+```
+
+
+
+
+<details>
+  <summary>**Session Info**</summary>
+```{r, echo = F}
+sessionInfo()
+```
+</details>
+
+
+
+
+
+
+
