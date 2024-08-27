@@ -38,7 +38,7 @@ opts_knit$set(width=75)
 
 ```
 
-```{r show_dt, echo = F}
+```{r show_dt, echo = F, cache = F}
 require(DT)
 
 show_tbl <- function(df){
@@ -48,7 +48,8 @@ show_tbl <- function(df){
             options = list(pageLength = 10,
                            searching = FALSE))
 
-}
+} 
+
 ```
 
 
@@ -82,7 +83,7 @@ if(!require("HiTME")){
 
 # Data loading
 
-File can be downloaded from (https://figshare.com/ndownloader/files/43848153). This includes 3 samples in a list.
+Demo dataset can be downloaded from (https://figshare.com/ndownloader/files/43848153). This includes 3 samples in a list.
 
 ```{r set_download_params}
 # set downloading directory
@@ -114,7 +115,7 @@ bassez <- subset(bassez, sample == "BIOKEY_13_Pre")
 
 # Load reference maps
 HiTME layer 2 for finer cell type classification requires expert-curated single-cell reference maps.
-Download reference maps for human
+Download reference maps for human:
 
 ```{r get_reference_maps, message = F, warning = F, cache = F, results = 'hide'}
 library(ProjecTILs)
@@ -154,7 +155,7 @@ bassez <- Run.HiTME(bassez,
 ```
 
 
-After cell type classification, the object metadata has been updated with different layers of cell type classification of granularity. We can explore the new metadata content.
+After cell type classification, the object metadata has been updated with different layers of cell type classification of granularity. We can explore the new metadata content:
 
 ```{r explore_demo_meta, results = 'hide'}
 # select the 3 layers or levels of granuality provided by HiTME
@@ -168,7 +169,7 @@ df <- bassez@meta.data[!is.na(bassez@meta.data$layer1),layers]
 show_tbl(head(df, 100))
 ```
 
-We can also visualize the cell type annotation in a UMAP representation. Let's do it for `layer`, showing the broad cell type classification.
+We can also visualize the cell type annotation in a UMAP representation. Let's do it for `layer1`, showing the broad cell type classification.
 
 ```{r, echo = F, warning = F, message = F}
 # Process dataset and reduce dimensionality
