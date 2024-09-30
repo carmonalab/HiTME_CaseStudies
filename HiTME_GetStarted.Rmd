@@ -145,13 +145,14 @@ patchwork::wrap_plots(refmap_umap)
 ```
 
 # Cell type classification
-Classify cell types using HiTME
+Classify cell types using HiTME, specifiy the species of origin of the dataset. Default is `human`.
 
 ```{r Run_HiTME, message = F, warning = F, results = 'hide'}
 library(HiTME)
 
 bassez <- Run.HiTME(bassez,
-                    ref.maps = ref.maps)
+                    ref.maps = ref.maps,
+                    species = "human")
 ```
 
 
